@@ -1,0 +1,12 @@
+#%PAM-1.0
+# PAM configuration for OpenVPN with LDAP-backed TOTP
+#
+# Install this file to /etc/pam.d/openvpn
+#
+# The pam_ldap_totp module validates TOTP codes and forwards the password
+# to the next module for LDAP authentication.
+
+auth required pam_ldap_totp.so forward_pass
+auth required pam_ldap.so use_first_pass
+
+account sufficient pam_permit.so

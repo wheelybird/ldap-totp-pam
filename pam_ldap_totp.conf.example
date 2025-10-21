@@ -1,0 +1,109 @@
+# PAM LDAP TOTP Configuration
+#
+# This file configures the PAM module for LDAP-backed TOTP authentication
+#
+# CONFIGURATION APPROACH:
+# You can configure LDAP connection settings in two ways:
+#
+# Option 1: Use /etc/nslcd.conf for LDAP settings (recommended if you already use nslcd)
+#   - Leave the LDAP settings below commented out
+#   - Optionally set nslcd_conf_file to point to a custom location
+#   - The module will read LDAP connection settings from /etc/nslcd.conf
+#
+# Option 2: Configure LDAP settings in this file
+#   - Uncomment and configure the LDAP settings in the "LDAP Connection Settings" section below
+#   - These settings will override any found in /etc/nslcd.conf
+#   - This is useful if you don't use nslcd or want different LDAP settings for TOTP authentication
+#
+# Option 3: Hybrid approach
+#   - Use /etc/nslcd.conf for most settings
+#   - Override specific settings by uncommenting them below
+#   - Settings in this file take precedence over /etc/nslcd.conf
+
+# ==============================================================================
+# TOTP-SPECIFIC SETTINGS
+# ==============================================================================
+
+# TOTP mode: append, challenge, web
+# append - Concatenate TOTP to password (password123456)
+# challenge - Server prompts for TOTP after password validation
+# web - Use web authentication (requires TOTP_MODE=web_auth env var)
+totp_mode append
+
+# LDAP attribute containing the TOTP secret
+# Options: totpSecret (recommended), userPassword, description
+totp_attribute totpSecret
+
+# Prefix to identify TOTP data within the attribute
+# Use "" for totpSecret, "{TOTP}" for userPassword, "TOTP-SECRET:" for description
+totp_prefix ""
+
+# Prefix for backup/scratch codes
+scratch_prefix TOTP-SCRATCH:
+
+# Allow fallback to file-based authenticator if LDAP is unavailable
+# Files are read from /etc/openvpn/otp/${USER}.google_authenticator
+fallback_to_file false
+
+# TOTP time step in seconds (typically 30)
+time_step 30
+
+# Time window tolerance (number of steps to check before/after current time)
+# window_size 3 means checking 3 steps back, current, and 3 steps forward
+window_size 3
+
+# Grace period for new users to set up MFA (days)
+# Users with totpStatus=pending have this many days before enforcement
+grace_period_days 7
+
+# Enforcement mode: strict, graceful, warn_only
+# strict - Block all access after grace period
+# graceful - Block services but allow web UI for MFA setup
+# warn_only - Show warnings but don't block (testing only)
+enforcement_mode graceful
+
+# Service DN allowed during MFA setup (bypasses enforcement)
+# This allows users to log into the web UI to set up MFA
+setup_service_dn cn=ldap-user-manager,ou=services,dc=example,dc=com
+
+# ==============================================================================
+# LDAP CONNECTION SETTINGS (Optional)
+# ==============================================================================
+#
+# By default, LDAP connection settings are read from /etc/nslcd.conf
+# Uncomment the settings below to override or if you don't use nslcd.conf
+#
+# If you want to use a custom nslcd.conf location:
+# nslcd_conf_file /usr/local/etc/nslcd.conf
+#
+# LDAP server URI
+# uri ldap://ldap.example.com
+# uri ldaps://ldap.example.com:636
+#
+# LDAP base DN for searches
+# base dc=example,dc=com
+#
+# Bind DN for LDAP authentication (optional - leave commented for anonymous bind)
+# binddn cn=auth-service,ou=services,dc=example,dc=com
+#
+# Bind password (required if binddn is set)
+# bindpw secretpassword
+#
+# TLS/SSL settings
+# ssl off           # No TLS
+# ssl start_tls     # Use StartTLS
+# ssl on            # Use LDAPS
+#
+# TLS certificate validation
+# tls_reqcert yes   # Validate certificates (recommended for production)
+# tls_reqcert no    # Don't validate certificates (testing only)
+#
+# CA certificate file for TLS validation
+# tls_cacertfile /etc/ssl/certs/ca-certificates.crt
+
+# ==============================================================================
+# DEBUG SETTINGS
+# ==============================================================================
+
+# Enable debug logging to syslog
+debug false
