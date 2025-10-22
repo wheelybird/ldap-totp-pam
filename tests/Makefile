@@ -6,10 +6,10 @@ LDFLAGS = -lldap -loath -lpam
 
 # Source files from parent directory
 SRC_DIR = ../src
-SOURCES = $(SRC_DIR)/config.c $(SRC_DIR)/totp_validate.c
+SOURCES = $(SRC_DIR)/config.c $(SRC_DIR)/totp_validate.c $(SRC_DIR)/security_utils.c
 
 # Object files
-OBJECTS = config.o totp_validate.o
+OBJECTS = config.o totp_validate.o security_utils.o
 
 # Test executables
 TESTS = test_config test_totp test_extract
@@ -25,11 +25,14 @@ config.o: $(SRC_DIR)/config.c
 totp_validate.o: $(SRC_DIR)/totp_validate.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+security_utils.o: $(SRC_DIR)/security_utils.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
 # Build test executables
-test_config: test_config.c config.o
+test_config: test_config.c config.o security_utils.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-test_totp: test_totp.c totp_validate.o
+test_totp: test_totp.c totp_validate.o security_utils.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 test_extract: test_extract.c

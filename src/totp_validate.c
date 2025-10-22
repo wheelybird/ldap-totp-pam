@@ -66,11 +66,12 @@ int validate_totp_code(pam_handle_t *pamh, const char *secret, const char *code,
                              otp);
 
     if (rc == OATH_OK) {
-      if (strcmp(otp, code) == 0) {
+      /* Use constant-time comparison to prevent timing attacks */
+      if (constant_time_compare(otp, code, 6)) {
         if (config->debug) {
           pam_syslog(pamh, LOG_DEBUG, "TOTP code validated successfully (window: %d)", window);
         }
-        free(decoded_secret);
+        secure_free(decoded_secret, decoded_len);
         oath_done();
         return 1;
       }
@@ -84,7 +85,7 @@ int validate_totp_code(pam_handle_t *pamh, const char *secret, const char *code,
     pam_syslog(pamh, LOG_DEBUG, "TOTP code validation failed");
   }
 
-  free(decoded_secret);
+  secure_free(decoded_secret, decoded_len);
   oath_done();
   return 0;
 }

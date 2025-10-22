@@ -26,6 +26,9 @@ typedef struct {
   char *challenge_prompt;      /* Prompt text for challenge-response mode */
   char *web_auth_script;       /* Path to deferred auth script for web mode */
   char *totp_attribute;        /* LDAP attribute containing TOTP secret */
+  char *scratch_attribute;     /* LDAP attribute containing scratch codes (default: totpScratchCode) */
+  char *status_attribute;      /* LDAP attribute for TOTP status (default: totpStatus) */
+  char *enrolled_date_attribute; /* LDAP attribute for enrollment date (default: totpEnrolledDate) */
   char *totp_prefix;           /* Prefix for TOTP data (e.g., "TOTP-SECRET:") */
   char *scratch_prefix;        /* Prefix for scratch codes */
   int fallback_to_file;        /* Fallback to file-based authenticator */
@@ -82,6 +85,15 @@ PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags,
 PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags,
                                  int argc, const char **argv);
 
+/* Security utility functions */
+int constant_time_compare(const char *a, const char *b, size_t len);
+void secure_free(void *ptr, size_t len);
+char *ldap_escape_filter(const char *input);
+int is_safe_username(const char *username);
+int is_valid_ldap_attribute(const char *attr);
+int is_valid_date(int year, int month, int day, int hour, int min, int sec);
+char *safe_strdup(const char *s);
+
 /* Utility macros */
 #define TOTP_CONFIG_FILE "/etc/security/pam_ldap_totp.conf"
 #define NSLCD_CONFIG_FILE "/etc/nslcd.conf"
@@ -100,6 +112,15 @@ PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags,
     if ((cfg)->debug) { \
       fprintf(stderr, "[PAM_LDAP_TOTP:DEBUG] " fmt "\n", ##__VA_ARGS__); \
       fflush(stderr); \
+    } \
+  } while(0)
+
+/* Secure free macros for sensitive data */
+#define SECURE_FREE_STRING(ptr) \
+  do { \
+    if (ptr) { \
+      secure_free(ptr, strlen(ptr)); \
+      ptr = NULL; \
     } \
   } while(0)
 

@@ -103,9 +103,16 @@ char *ldap_get_totp_secret(pam_handle_t *pamh, LDAP *ld, const char *username,
   struct berval **values;
   char *secret = NULL;
   size_t prefix_len = strlen(totp_cfg->totp_prefix);
+  char *escaped_username = NULL;
 
-  /* Build search filter (uid=username) */
-  snprintf(filter, sizeof(filter), "(uid=%s)", username);
+  /* Build search filter with LDAP injection protection */
+  escaped_username = ldap_escape_filter(username);
+  if (!escaped_username) {
+    pam_syslog(pamh, LOG_ERR, "Failed to escape username for LDAP filter");
+    return NULL;
+  }
+  snprintf(filter, sizeof(filter), "(uid=%s)", escaped_username);
+  free(escaped_username);
 
   DEBUG_LOG(totp_cfg, "LDAP search: base='%s' filter='%s' attr='%s'",
             ldap_cfg->base, filter, totp_cfg->totp_attribute);
@@ -184,8 +191,7 @@ char *ldap_get_totp_secret(pam_handle_t *pamh, LDAP *ld, const char *username,
         secret = strdup(secret_start);
       }
 
-      DEBUG_LOG(totp_cfg, "Found TOTP secret for user %s (length: %lu)",
-                username, (unsigned long)(secret ? strlen(secret) : 0));
+      DEBUG_LOG(totp_cfg, "Found TOTP secret for user %s", username);
       break;
     }
   }
@@ -193,7 +199,7 @@ char *ldap_get_totp_secret(pam_handle_t *pamh, LDAP *ld, const char *username,
   if (!secret) {
     DEBUG_LOG(totp_cfg, "No matching TOTP secret found (prefix mismatch?)");
   } else {
-    DEBUG_LOG(totp_cfg, "Successfully extracted TOTP secret (len=%zu)", strlen(secret));
+    DEBUG_LOG(totp_cfg, "Successfully extracted TOTP secret");
   }
 
   ldap_value_free_len(values);
@@ -208,14 +214,21 @@ int ldap_check_scratch_code(pam_handle_t *pamh, LDAP *ld, const char *username,
                               totp_config_t *totp_cfg) {
   int rc;
   char filter[256];
-  char *attrs[] = { "totpScratchCode", NULL };
+  char *attrs[] = { totp_cfg->scratch_attribute, NULL };
   LDAPMessage *result = NULL;
   LDAPMessage *entry;
   struct berval **values;
   int found = 0;
+  char *escaped_username = NULL;
 
-  /* Build search filter */
-  snprintf(filter, sizeof(filter), "(uid=%s)", username);
+  /* Build search filter with LDAP injection protection */
+  escaped_username = ldap_escape_filter(username);
+  if (!escaped_username) {
+    pam_syslog(pamh, LOG_ERR, "Failed to escape username for LDAP filter");
+    return 0;
+  }
+  snprintf(filter, sizeof(filter), "(uid=%s)", escaped_username);
+  free(escaped_username);
 
   /* Search for user */
   rc = ldap_search_ext_s(ld, ldap_cfg->base, LDAP_SCOPE_SUBTREE,
@@ -235,17 +248,20 @@ int ldap_check_scratch_code(pam_handle_t *pamh, LDAP *ld, const char *username,
   }
 
   /* Get attribute values */
-  values = ldap_get_values_len(ld, entry, "totpScratchCode");
+  values = ldap_get_values_len(ld, entry, totp_cfg->scratch_attribute);
   if (!values) {
     DEBUG_LOG(totp_cfg, "No scratch codes found for user %s", username);
     ldap_msgfree(result);
     return 0;
   }
 
-  /* Look for matching scratch code */
+  /* Look for matching scratch code using constant-time comparison */
   char *user_dn = NULL;
+  size_t code_len = strlen(code);
   for (int i = 0; values[i] != NULL; i++) {
-    if (strcmp(values[i]->bv_val, code) == 0) {
+    /* Use constant-time comparison to prevent timing attacks */
+    if (values[i]->bv_len == code_len &&
+        constant_time_compare(values[i]->bv_val, code, code_len)) {
       found = 1;
       DEBUG_LOG(totp_cfg, "Found matching scratch code for user %s", username);
 
@@ -272,7 +288,7 @@ int ldap_check_scratch_code(pam_handle_t *pamh, LDAP *ld, const char *username,
     bvals[1] = NULL;
 
     mod.mod_op = LDAP_MOD_DELETE | LDAP_MOD_BVALUES;
-    mod.mod_type = "totpScratchCode";
+    mod.mod_type = totp_cfg->scratch_attribute;
     mod.mod_bvalues = bvals;
 
     mods[0] = &mod;
@@ -304,9 +320,16 @@ char *ldap_get_attribute(pam_handle_t *pamh, LDAP *ld, const char *username,
   LDAPMessage *entry;
   struct berval **values;
   char *value = NULL;
+  char *escaped_username = NULL;
 
-  /* Build search filter (uid=username) */
-  snprintf(filter, sizeof(filter), "(uid=%s)", username);
+  /* Build search filter with LDAP injection protection */
+  escaped_username = ldap_escape_filter(username);
+  if (!escaped_username) {
+    pam_syslog(pamh, LOG_ERR, "Failed to escape username for LDAP filter");
+    return NULL;
+  }
+  snprintf(filter, sizeof(filter), "(uid=%s)", escaped_username);
+  free(escaped_username);
 
   /* Search for user */
   rc = ldap_search_ext_s(ld, ldap_cfg->base, LDAP_SCOPE_SUBTREE,

@@ -34,6 +34,15 @@ totp_mode append
 # Options: totpSecret (recommended), userPassword, description
 totp_attribute totpSecret
 
+# LDAP attribute containing scratch/backup codes
+scratch_attribute totpScratchCode
+
+# LDAP attribute containing TOTP enrollment status (none, pending, active, disabled, bypassed)
+status_attribute totpStatus
+
+# LDAP attribute containing enrollment date (LDAP GeneralizedTime format: YYYYMMDDhhmmssZ)
+enrolled_date_attribute totpEnrolledDate
+
 # Prefix to identify TOTP data within the attribute
 # Use "" for totpSecret, "{TOTP}" for userPassword, "TOTP-SECRET:" for description
 totp_prefix ""

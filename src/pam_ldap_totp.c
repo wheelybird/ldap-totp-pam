@@ -123,6 +123,12 @@ static int try_file_fallback(pam_handle_t *pamh, const char *username, const cha
   totp_config_t config;
   int result = 0;
 
+  /* Validate username to prevent path traversal attacks */
+  if (!is_safe_username(username)) {
+    pam_syslog(pamh, LOG_ERR, "Unsafe username rejected for file-based fallback: %s", username);
+    return 0;
+  }
+
   snprintf(filepath, sizeof(filepath), "%s/%s.google_authenticator",
            FILE_BASED_OTP_DIR, username);
 
@@ -190,7 +196,7 @@ static int authenticate_challenge_response(pam_handle_t *pamh,
   /* Validate OTP length */
   if (otp_len != 6 && otp_len != 8) {
     pam_syslog(pamh, LOG_NOTICE, "Invalid TOTP code length: %zu (expected 6 or 8)", otp_len);
-    free(otp);
+    SECURE_FREE_STRING(otp);
     return PAM_AUTH_ERR;
   }
 
@@ -198,16 +204,16 @@ static int authenticate_challenge_response(pam_handle_t *pamh,
   ld = totp_ldap_connect(pamh, ldap_cfg, totp_cfg);
   if (!ld) {
     pam_syslog(pamh, LOG_ERR, "Failed to connect to LDAP in challenge-response mode");
-    free(otp);
 
     /* Try file fallback if enabled */
     if (totp_cfg->fallback_to_file) {
       if (try_file_fallback(pamh, username, trimmed_otp)) {
-        free(otp);
+        SECURE_FREE_STRING(otp);
         return PAM_SUCCESS;
       }
     }
 
+    SECURE_FREE_STRING(otp);
     return PAM_AUTHINFO_UNAVAIL;
   }
 
@@ -220,13 +226,13 @@ static int authenticate_challenge_response(pam_handle_t *pamh,
     if (totp_cfg->fallback_to_file) {
       totp_ldap_disconnect(ld);
       if (try_file_fallback(pamh, username, trimmed_otp)) {
-        free(otp);
+        SECURE_FREE_STRING(otp);
         return PAM_SUCCESS;
       }
     }
 
     totp_ldap_disconnect(ld);
-    free(otp);
+    SECURE_FREE_STRING(otp);
     return PAM_AUTH_ERR;
   }
 
@@ -256,8 +262,8 @@ static int authenticate_challenge_response(pam_handle_t *pamh,
   }
 
   /* Cleanup */
-  free(secret);
-  free(otp);
+  SECURE_FREE_STRING(secret);
+  SECURE_FREE_STRING(otp);
   totp_ldap_disconnect(ld);
 
   return retval;
@@ -291,7 +297,7 @@ static int authenticate_append_mode(pam_handle_t *pamh,
   if (!extract_otp_from_password(full_password_copy, &password, &otp)) {
     INFO_LOG("Failed to extract OTP from password for user '%s'", username);
     pam_syslog(pamh, LOG_ERR, "Failed to extract OTP from password");
-    free(full_password_copy);
+    SECURE_FREE_STRING(full_password_copy);
     return PAM_AUTH_ERR;
   }
   DEBUG_LOG(totp_cfg, "Extracted password (len=%zu) and OTP (len=%zu)", strlen(password), strlen(otp));
@@ -310,16 +316,16 @@ static int authenticate_append_mode(pam_handle_t *pamh,
     if (totp_cfg->fallback_to_file) {
       if (try_file_fallback(pamh, username, otp)) {
         INFO_LOG("File-based OTP fallback succeeded for user '%s'", username);
-        free(password);
-        free(otp);
-        free(full_password_copy);
+        SECURE_FREE_STRING(password);
+        SECURE_FREE_STRING(otp);
+        SECURE_FREE_STRING(full_password_copy);
         return PAM_SUCCESS;
       }
     }
 
-    free(password);
-    free(otp);
-    free(full_password_copy);
+    SECURE_FREE_STRING(password);
+    SECURE_FREE_STRING(otp);
+    SECURE_FREE_STRING(full_password_copy);
     return PAM_AUTHINFO_UNAVAIL;
   }
   DEBUG_LOG(totp_cfg, "LDAP connection successful");
@@ -333,18 +339,34 @@ static int authenticate_append_mode(pam_handle_t *pamh,
     DEBUG_LOG(totp_cfg, "No TOTP secret in LDAP for user %s", username);
 
     /* Check MFA status for grace period handling */
-    char *totp_status = ldap_get_attribute(pamh, ld, username, "totpStatus", ldap_cfg);
-    char *enrolled_date = ldap_get_attribute(pamh, ld, username, "totpEnrolledDate", ldap_cfg);
+    char *totp_status = ldap_get_attribute(pamh, ld, username, totp_cfg->status_attribute, ldap_cfg);
+    char *enrolled_date = ldap_get_attribute(pamh, ld, username, totp_cfg->enrolled_date_attribute, ldap_cfg);
 
     if (totp_status && strcmp(totp_status, "pending") == 0) {
       /* User is in grace period - allow without TOTP */
       if (enrolled_date && totp_cfg->grace_period_days > 0) {
         struct tm tm_enrolled = {0};
+        int year, month, day, hour, min, sec;
         if (sscanf(enrolled_date, "%4d%2d%2d%2d%2d%2d",
-                   &tm_enrolled.tm_year, &tm_enrolled.tm_mon, &tm_enrolled.tm_mday,
-                   &tm_enrolled.tm_hour, &tm_enrolled.tm_min, &tm_enrolled.tm_sec) == 6) {
-          tm_enrolled.tm_year -= 1900;
-          tm_enrolled.tm_mon -= 1;
+                   &year, &month, &day, &hour, &min, &sec) == 6) {
+          /* Validate date components */
+          if (!is_valid_date(year, month, day, hour, min, sec)) {
+            pam_syslog(pamh, LOG_WARNING, "Invalid enrollment date for user %s", username);
+            if (totp_status) free(totp_status);
+            if (enrolled_date) free(enrolled_date);
+            SECURE_FREE_STRING(password);
+            SECURE_FREE_STRING(otp);
+            SECURE_FREE_STRING(full_password_copy);
+            totp_ldap_disconnect(ld);
+            return PAM_AUTH_ERR;
+          }
+
+          tm_enrolled.tm_year = year - 1900;
+          tm_enrolled.tm_mon = month - 1;
+          tm_enrolled.tm_mday = day;
+          tm_enrolled.tm_hour = hour;
+          tm_enrolled.tm_min = min;
+          tm_enrolled.tm_sec = sec;
           time_t enrolled_time = timegm(&tm_enrolled);
           time_t current_time = time(NULL);
           int days_elapsed = (current_time - enrolled_time) / 86400;
@@ -352,11 +374,11 @@ static int authenticate_append_mode(pam_handle_t *pamh,
           if (days_elapsed < totp_cfg->grace_period_days) {
             pam_syslog(pamh, LOG_NOTICE, "User %s in grace period (%d days remaining)",
                       username, totp_cfg->grace_period_days - days_elapsed);
-            free(totp_status);
-            free(enrolled_date);
-            free(password);
-            free(otp);
-            free(full_password_copy);
+            if (totp_status) free(totp_status);
+            if (enrolled_date) free(enrolled_date);
+            SECURE_FREE_STRING(password);
+            SECURE_FREE_STRING(otp);
+            SECURE_FREE_STRING(full_password_copy);
             totp_ldap_disconnect(ld);
             return PAM_SUCCESS;
           }
@@ -370,18 +392,18 @@ static int authenticate_append_mode(pam_handle_t *pamh,
     /* Try file fallback if enabled */
     if (totp_cfg->fallback_to_file) {
       if (try_file_fallback(pamh, username, otp)) {
-        free(password);
-        free(otp);
-        free(full_password_copy);
+        SECURE_FREE_STRING(password);
+        SECURE_FREE_STRING(otp);
+        SECURE_FREE_STRING(full_password_copy);
         totp_ldap_disconnect(ld);
         return PAM_SUCCESS;
       }
     }
 
     pam_syslog(pamh, LOG_NOTICE, "No TOTP configured for user %s", username);
-    free(password);
-    free(otp);
-    free(full_password_copy);
+    SECURE_FREE_STRING(password);
+    SECURE_FREE_STRING(otp);
+    SECURE_FREE_STRING(full_password_copy);
     totp_ldap_disconnect(ld);
     return PAM_AUTH_ERR;
   }
@@ -454,10 +476,10 @@ static int authenticate_append_mode(pam_handle_t *pamh,
   }
 
   /* Cleanup */
-  free(secret);
-  free(password);
-  free(otp);
-  free(full_password_copy);
+  SECURE_FREE_STRING(secret);
+  SECURE_FREE_STRING(password);
+  SECURE_FREE_STRING(otp);
+  SECURE_FREE_STRING(full_password_copy);
   totp_ldap_disconnect(ld);
 
   return retval;

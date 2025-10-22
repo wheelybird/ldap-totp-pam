@@ -50,3 +50,4 @@ $(OBJDIR)/pam_ldap_totp.o: include/pam_ldap_totp.h
 $(OBJDIR)/config.o: include/pam_ldap_totp.h
 $(OBJDIR)/ldap_query.o: include/pam_ldap_totp.h
 $(OBJDIR)/totp_validate.o: include/pam_ldap_totp.h
+$(OBJDIR)/security_utils.o: include/pam_ldap_totp.h

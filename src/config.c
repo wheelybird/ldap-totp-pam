@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <syslog.h>
 #include "../include/pam_ldap_totp.h"
 
 /* Trim whitespace from string */
@@ -59,6 +60,9 @@ int parse_totp_config(const char *config_file, totp_config_t *config) {
   config->challenge_prompt = strdup("Enter TOTP code: ");
   config->web_auth_script = strdup("/usr/local/bin/pam_ldap_totp_deferred.sh");
   config->totp_attribute = strdup("totpSecret");
+  config->scratch_attribute = strdup("totpScratchCode");
+  config->status_attribute = strdup("totpStatus");
+  config->enrolled_date_attribute = strdup("totpEnrolledDate");
   config->totp_prefix = strdup("");
   config->scratch_prefix = strdup("TOTP-SCRATCH:");
   config->fallback_to_file = 0;
@@ -111,8 +115,36 @@ int parse_totp_config(const char *config_file, totp_config_t *config) {
         config->web_auth_script = strdup(trimmed_value);
       }
       else if (strcmp(key, "totp_attribute") == 0) {
+        if (!is_valid_ldap_attribute(trimmed_value)) {
+          syslog(LOG_ERR, "Invalid LDAP attribute name: %s", trimmed_value);
+          continue;
+        }
         free(config->totp_attribute);
         config->totp_attribute = strdup(trimmed_value);
+      }
+      else if (strcmp(key, "scratch_attribute") == 0) {
+        if (!is_valid_ldap_attribute(trimmed_value)) {
+          syslog(LOG_ERR, "Invalid LDAP attribute name: %s", trimmed_value);
+          continue;
+        }
+        free(config->scratch_attribute);
+        config->scratch_attribute = strdup(trimmed_value);
+      }
+      else if (strcmp(key, "status_attribute") == 0) {
+        if (!is_valid_ldap_attribute(trimmed_value)) {
+          syslog(LOG_ERR, "Invalid LDAP attribute name: %s", trimmed_value);
+          continue;
+        }
+        free(config->status_attribute);
+        config->status_attribute = strdup(trimmed_value);
+      }
+      else if (strcmp(key, "enrolled_date_attribute") == 0) {
+        if (!is_valid_ldap_attribute(trimmed_value)) {
+          syslog(LOG_ERR, "Invalid LDAP attribute name: %s", trimmed_value);
+          continue;
+        }
+        free(config->enrolled_date_attribute);
+        config->enrolled_date_attribute = strdup(trimmed_value);
       }
       else if (strcmp(key, "totp_prefix") == 0) {
         free(config->totp_prefix);
@@ -282,6 +314,9 @@ void free_totp_config(totp_config_t *config) {
   if (config->challenge_prompt) free(config->challenge_prompt);
   if (config->web_auth_script) free(config->web_auth_script);
   if (config->totp_attribute) free(config->totp_attribute);
+  if (config->scratch_attribute) free(config->scratch_attribute);
+  if (config->status_attribute) free(config->status_attribute);
+  if (config->enrolled_date_attribute) free(config->enrolled_date_attribute);
   if (config->totp_prefix) free(config->totp_prefix);
   if (config->scratch_prefix) free(config->scratch_prefix);
   if (config->enforcement_mode) free(config->enforcement_mode);
