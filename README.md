@@ -112,6 +112,11 @@ totp_mode append
 # LDAP attribute containing TOTP secret
 totp_attribute totpSecret
 
+# LDAP attribute mappings (customizable for your schema)
+scratch_attribute totpScratchCode
+status_attribute totpStatus
+enrolled_date_attribute totpEnrolledDate
+
 # TOTP validation settings
 time_step 30
 window_size 3
@@ -123,6 +128,15 @@ enforcement_mode graceful
 # Debug (disable in production)
 debug false
 ```
+
+**Attribute Mapping:**
+All LDAP attributes used by the module are configurable, allowing integration with custom LDAP schemas:
+- `totp_attribute` - LDAP attribute storing the TOTP secret (default: `totpSecret`)
+- `scratch_attribute` - LDAP attribute for backup/scratch codes (default: `totpScratchCode`)
+- `status_attribute` - LDAP attribute for enrollment status (default: `totpStatus`)
+- `enrolled_date_attribute` - LDAP attribute for enrollment date (default: `totpEnrolledDate`)
+
+If you use the recommended [LDAP TOTP schema](https://github.com/wheelybird/ldap-totp-schema), the defaults will work out of the box.
 
 See `pam_ldap_totp.conf.example` for all available options.
 

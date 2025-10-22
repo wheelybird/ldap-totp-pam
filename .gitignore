@@ -1,1 +1,21 @@
+# Compiled PAM module
 *.so
+
+# Object files
+*.o
+obj/*.o
+
+# Test executables
+tests/test_config
+tests/test_totp
+tests/test_extract
+
+# Editor and IDE files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temporary test files
+/tmp/pam_ldap_totp_test_*
